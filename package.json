@@ -7,6 +7,8 @@
     "build": "tsc --noEmit",
     "check": "tsc --noEmit",
     "crawl:index": "tsx scripts/crawl-processwire.ts",
+    "crawl:fill-missing": "tsx scripts/fill-missing-from-sitemap.ts",
+    "crawl:sitemap-slow": "tsx scripts/crawl-sitemap-slow.ts",
     "dev:worker": "wrangler dev",
     "deploy:worker": "wrangler deploy"
   },

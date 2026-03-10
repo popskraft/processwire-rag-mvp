@@ -1,8 +1,13 @@
 {
-  "date": "2026-03-10T11:40:13.599Z",
-  "pagesIndexed": 89,
-  "pointsIndexed": 624,
+  "date": "2026-03-10T12:00:00.000Z",
+  "pagesIndexed": 97,
+  "pointsIndexed": 715,
   "sourceRoot": "https://processwire.com/docs/",
   "allowedPrefix": "https://processwire.com/docs/",
-  "embeddingModel": "@cf/baai/bge-base-en-v1.5"
+  "embeddingModel": "@cf/baai/bge-base-en-v1.5",
+  "mode": "sitemap-full-plus-linked-docs",
+  "sitemapDocsUrls": 97,
+  "indexedUniqueDocsUrls": 99,
+  "crawlDelayMs": 6000,
+  "notes": "Covers all 97 /docs/ URLs from sitemap plus 2 linked docs pages outside sitemap."
 }

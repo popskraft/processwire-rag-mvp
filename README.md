@@ -56,6 +56,12 @@ npx wrangler login
 npm run crawl:index
 ```
 
+For a gentler full rebuild that follows ProcessWire's `robots.txt` crawl delay and indexes only sitemap-backed docs URLs:
+
+```bash
+npm run crawl:sitemap-slow
+```
+
 5. Deploy the retrieval Worker:
 
 ```bash
@@ -85,4 +91,53 @@ Example:
 curl -X POST "$WORKER_URL/search" \
   -H "content-type: application/json" \
   -d '{"query":"How do fields work in ProcessWire?","limit":5}'
+```
+
+## Using from a local project
+
+For local development projects, treat this service as a ProcessWire knowledge lookup tool.
+
+Recommended local environment variables:
+
+```bash
+export PROCESSWIRE_RAG_URL="https://processwire-rag-mvp.popskraft.workers.dev/search"
+export PROCESSWIRE_RAG_TOKEN="YOUR_RETRIEVAL_BEARER_TOKEN"
+```
+
+Quick lookup example:
+
+```bash
+curl -s "$PROCESSWIRE_RAG_URL" \
+  -H "content-type: application/json" \
+  -H "authorization: Bearer $PROCESSWIRE_RAG_TOKEN" \
+  -d '{"query":"How do ProcessWire templates and fields work?","limit":3}'
+```
+
+Suggested agent workflow:
+
+1. When implementing or debugging anything ProcessWire-related, search the RAG service first.
+2. Use the retrieved docs snippets as implementation context, not as final truth if the local codebase says otherwise.
+3. Prefer RAG lookup for questions about ProcessWire APIs, fields, templates, selectors, modules, hooks, access control, and admin behavior.
+4. Skip the RAG lookup for purely local business logic that does not depend on ProcessWire internals.
+
+## Reindex modes
+
+- `npm run crawl:index`
+  Fast site crawl from `/docs/` links. Good for development, but more likely to hit rate limits.
+- `npm run crawl:fill-missing`
+  Slow incremental fill for docs URLs present in sitemap but missing from Qdrant.
+- `npm run crawl:sitemap-slow`
+  Recommended stable mode. Rebuilds the collection from ProcessWire sitemap URLs only and respects a `6s` delay between page fetches.
+
+Suggested instruction snippet for another project's `AGENTS.md`:
+
+```markdown
+## ProcessWire Knowledge Base
+
+- For any question about ProcessWire behavior, APIs, templates, fields, selectors, hooks, modules, or admin conventions, query the remote ProcessWire RAG before making implementation decisions.
+- Endpoint: `https://processwire-rag-mvp.popskraft.workers.dev/search`
+- Auth: `Authorization: Bearer $PROCESSWIRE_RAG_TOKEN`
+- Example query payload: `{"query":"How do repeater fields work in ProcessWire?","limit":3}`
+- Use retrieved snippets as external reference context and then apply them carefully to the local project in `/Applications/MAMP/htdocs/kor-online`.
+- If the local codebase behavior differs from docs, prefer the local code and note the discrepancy.
 ```

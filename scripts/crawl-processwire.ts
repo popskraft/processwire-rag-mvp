@@ -6,6 +6,7 @@ import { chunkText } from "./lib/chunk.js";
 import { loadConfig } from "./lib/config.js";
 
 type PageRecord = {
+  html: string;
   text: string;
   title: string;
   url: string;
@@ -28,19 +29,24 @@ const VECTOR_SIZE = 768;
 const DISTANCE = "Cosine";
 const MAX_PAGES = 250;
 const EMBEDDING_BATCH_SIZE = 32;
+const REQUEST_DELAY_MS = 900;
+const MAX_FETCH_RETRIES = 4;
+const RETRY_BASE_DELAY_MS = 2500;
 
 async function main(): Promise<void> {
   const config = loadConfig();
-  const pages = await crawlDocumentation(config.siteStartUrl, config.siteAllowedPrefix);
+  const pageHtmlMap = await crawlDocumentation(config.siteStartUrl, config.siteAllowedPrefix);
+  const pages = Array.from(pageHtmlMap.entries());
 
   console.log(`Discovered ${pages.length} documentation pages`);
 
-  const pageRecords = await Promise.all(pages.map(fetchPage));
-  const populatedPages = pageRecords.filter((page): page is PageRecord => Boolean(page?.text));
+  const pageRecords = pages
+    .map(([url, html]) => extractPage(url, html))
+    .filter((page): page is PageRecord => Boolean(page?.text));
 
-  console.log(`Fetched ${populatedPages.length} pages with extractable text`);
+  console.log(`Prepared ${pageRecords.length} pages with extractable text`);
 
-  const points = await buildPoints(populatedPages, config);
+  const points = await buildPoints(pageRecords, config);
   console.log(`Prepared ${points.length} vector points`);
 
   await ensureCollection(config.qdrantUrl, config.qdrantCollection, config.qdrantApiKey);
@@ -48,7 +54,7 @@ async function main(): Promise<void> {
 
   const manifest = {
     date: new Date().toISOString(),
-    pagesIndexed: populatedPages.length,
+    pagesIndexed: pageRecords.length,
     pointsIndexed: points.length,
     sourceRoot: config.siteStartUrl,
     allowedPrefix: config.siteAllowedPrefix,
@@ -66,9 +72,10 @@ async function main(): Promise<void> {
   console.log("Indexing complete");
 }
 
-async function crawlDocumentation(startUrl: string, allowedPrefix: string): Promise<string[]> {
+async function crawlDocumentation(startUrl: string, allowedPrefix: string): Promise<Map<string, string>> {
   const queue = [startUrl];
   const visited = new Set<string>();
+  const pages = new Map<string, string>();
 
   while (queue.length > 0 && visited.size < MAX_PAGES) {
     const url = queue.shift()!;
@@ -81,6 +88,8 @@ async function crawlDocumentation(startUrl: string, allowedPrefix: string): Prom
     if (!html) {
       continue;
     }
+
+    pages.set(url, html);
 
     const $ = cheerio.load(html);
     $("a[href]").each((_, element) => {
@@ -104,15 +113,10 @@ async function crawlDocumentation(startUrl: string, allowedPrefix: string): Prom
     });
   }
 
-  return Array.from(visited);
+  return pages;
 }
 
-async function fetchPage(url: string): Promise<PageRecord | null> {
-  const html = await fetchHtml(url);
-  if (!html) {
-    return null;
-  }
-
+function extractPage(url: string, html: string): PageRecord | null {
   const $ = cheerio.load(html);
   $("script, style, noscript").remove();
 
@@ -133,6 +137,7 @@ async function fetchPage(url: string): Promise<PageRecord | null> {
   }
 
   return {
+    html,
     text,
     title,
     url
@@ -223,6 +228,18 @@ async function embedTexts(
 }
 
 async function ensureCollection(qdrantUrl: string, collection: string, apiKey: string): Promise<void> {
+  const deleteResponse = await fetch(`${qdrantUrl}/collections/${collection}`, {
+    method: "DELETE",
+    headers: {
+      "api-key": apiKey
+    }
+  });
+
+  if (!deleteResponse.ok && deleteResponse.status !== 404) {
+    const details = await deleteResponse.text();
+    throw new Error(`Could not reset Qdrant collection: ${deleteResponse.status} ${details}`);
+  }
+
   const response = await fetch(`${qdrantUrl}/collections/${collection}`, {
     method: "PUT",
     headers: {
@@ -239,9 +256,7 @@ async function ensureCollection(qdrantUrl: string, collection: string, apiKey: s
 
   if (!response.ok) {
     const details = await response.text();
-    if (!details.includes("already exists")) {
-      throw new Error(`Could not ensure Qdrant collection: ${response.status} ${details}`);
-    }
+    throw new Error(`Could not ensure Qdrant collection: ${response.status} ${details}`);
   }
 }
 
@@ -269,18 +284,33 @@ async function upsertPoints(
 }
 
 async function fetchHtml(url: string): Promise<string | null> {
-  const response = await fetch(url, {
-    headers: {
-      "user-agent": "processwire-rag-mvp/0.1"
+  for (let attempt = 0; attempt <= MAX_FETCH_RETRIES; attempt += 1) {
+    if (attempt > 0) {
+      await sleep(RETRY_BASE_DELAY_MS * attempt);
     }
-  });
 
-  if (!response.ok) {
+    const response = await fetch(url, {
+      headers: {
+        "user-agent": "processwire-rag-mvp/0.1"
+      }
+    });
+
+    if (response.ok) {
+      await sleep(REQUEST_DELAY_MS);
+      return response.text();
+    }
+
+    if (response.status === 429 && attempt < MAX_FETCH_RETRIES) {
+      console.warn(`Rate limited on ${url}, retry ${attempt + 1}/${MAX_FETCH_RETRIES}`);
+      continue;
+    }
+
     console.warn(`Skipping ${url}: ${response.status}`);
+    await sleep(REQUEST_DELAY_MS);
     return null;
   }
 
-  return response.text();
+  return null;
 }
 
 function normalizeUrl(baseUrl: string, href: string): string | null {
@@ -304,6 +334,10 @@ function normalizeUrl(baseUrl: string, href: string): string | null {
 
 function sha256(value: string): string {
   return createHash("sha256").update(value).digest("hex");
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 void main().catch((error) => {

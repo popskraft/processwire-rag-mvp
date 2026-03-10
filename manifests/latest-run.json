@@ -1,0 +1,8 @@
+{
+  "date": "2026-03-10T11:40:13.599Z",
+  "pagesIndexed": 89,
+  "pointsIndexed": 624,
+  "sourceRoot": "https://processwire.com/docs/",
+  "allowedPrefix": "https://processwire.com/docs/",
+  "embeddingModel": "@cf/baai/bge-base-en-v1.5"
+}

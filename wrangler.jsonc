@@ -1,0 +1,13 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "processwire-rag-mvp",
+  "main": "src/worker.ts",
+  "compatibility_date": "2026-03-10",
+  "ai": {
+    "binding": "AI"
+  },
+  "vars": {
+    "QDRANT_COLLECTION": "processwire_docs",
+    "EMBEDDING_MODEL": "@cf/baai/bge-base-en-v1.5"
+  }
+}
